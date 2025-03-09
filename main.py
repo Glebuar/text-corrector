@@ -1,12 +1,11 @@
 import pyperclip
 import keyboard
 import time
-import re
 import requests
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
-from win10toast import ToastNotifier
 import tkinter as tk
+from tkinter import messagebox
 import webbrowser
 from pathlib import Path
 import pystray
@@ -17,7 +16,6 @@ from cryptography.fernet import Fernet
 CONFIG_FILE = Path.cwd() / ".text_corrector_config"
 ENCRYPTION_KEY_FILE = Path.home() / ".text_corrector_encryption"
 state_history = {"original": "", "corrected": ""}
-notifier = ToastNotifier()
 
 # State tracking variables
 alt_pressed = False
@@ -38,8 +36,19 @@ def get_cipher():
         return Fernet(key_file.read())
 
 def notify(title, message):
-    notifier.show_toast(title, message, duration=5, threaded=True)
+    """Show Tkinter message dialog"""
 
+    def show_dialog():
+        root = tk.Tk()
+        root.withdraw()
+        messagebox.showinfo(title, message)
+        root.destroy()
+
+    # Handle threading for keyboard events
+    if app and app.winfo_exists():
+        app.after(0, show_dialog)
+    else:
+        show_dialog()
 
 def is_connected():
     try:
@@ -203,7 +212,7 @@ class AppUI(tk.Tk):
         if not key:
             return "None"
         if len(key) <= 6:
-            return "***"  # Handle very short keys
+            return "***"
         return f"{key[:2]}...{key[-4:]}" if len(key) > 6 else key
 
     def open_api_key_manager(self):
