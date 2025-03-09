@@ -48,10 +48,9 @@ def is_connected():
     except requests.ConnectionError:
         return False
 
-
 def correct_text_with_openai(input_text: str, api_key: str) -> str:
     prompt = ChatPromptTemplate.from_template(
-        "Correct grammar, spelling, punctuation, and style errors. Provide only corrected text:\n{input_text}"
+        "Correct grammar, spelling, punctuation, and style errors. Ensure each corrected sentence closely matches the original length. Do not comment or provide explanations about corrections. If the text includes nonsensical content, such as code snippets, repeating symbols, quotes, or variable names, leave those parts exactly as-is without modification. Provide only the corrected text:\n{input_text}"
     )
     llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0, api_key=api_key)
     chain = prompt | llm
@@ -62,12 +61,6 @@ def correct_text_with_openai(input_text: str, api_key: str) -> str:
         notify("API Error", str(e))
     return ""
 
-
-def limit_sentences(text, max_sentences=3):
-    sentences = re.split(r'(?<=[.!?])\s+', text.strip())
-    return ' '.join(sentences[:max_sentences])
-
-
 def safe_hotkey(func):
     def wrapper(*args, **kwargs):
         try:
@@ -75,9 +68,7 @@ def safe_hotkey(func):
         except Exception as e:
             notify("Hotkey Error", str(e))
         return True
-
     return wrapper
-
 
 @safe_hotkey
 def replace_selected_text():
@@ -88,7 +79,13 @@ def replace_selected_text():
     selected_text = pyperclip.paste().strip()
 
     if not selected_text:
-        notify("Selection Error", "Please select some text first.")
+        notify("Nothing Selected", "Please select some text first.")
+        pyperclip.copy(original_clipboard)
+        return
+
+    # Add character length check
+    if len(selected_text) > 1000:
+        notify("Limit Exceeded", "Maximum 1000 characters allowed for correction.")
         pyperclip.copy(original_clipboard)
         return
 
@@ -103,8 +100,8 @@ def replace_selected_text():
         pyperclip.copy(original_clipboard)
         return
 
-    limited_text = limit_sentences(selected_text)
-    corrected_text = correct_text_with_openai(limited_text, api_key)
+    # Use full selected text (under 1000 chars)
+    corrected_text = correct_text_with_openai(selected_text, api_key)
 
     if corrected_text:
         state_history["original"] = selected_text
@@ -117,22 +114,22 @@ def replace_selected_text():
     pyperclip.copy(original_clipboard)
     keyboard.release('alt')
 
-
 class AppUI(tk.Tk):
     def __init__(self):
         super().__init__()
+        self.iconbitmap('icon.ico')
         self.title("Text Corrector")
-        self.api_key = tk.StringVar()
+        self.api_key = ""
         self.tray_icon = None
         self.cipher = get_cipher()
 
-        # Hide main window and taskbar icon
+        # Window configuration
+        self.geometry("250x210")
+        self.resizable(False, False)
+        self.minsize(250, 210)
+        self.maxsize(250, 210)
         self.withdraw()
-
-        # Create system tray icon
         self.create_tray_icon()
-
-        # GUI components
         self.setup_ui()
         self.load_config()
 
@@ -140,14 +137,22 @@ class AppUI(tk.Tk):
         frame = tk.Frame(self)
         frame.pack(padx=10, pady=10)
 
-        tk.Label(frame, text="Enter OpenAI API Key:").pack(pady=5)
-        tk.Entry(frame, textvariable=self.api_key, width=50).pack(pady=5)
+        # API Key status display
+        self.api_status_label = tk.Label(frame, text="API Key: None")
+        self.api_status_label.pack(pady=5)
 
-        tk.Button(frame, text="Get API Key", command=self.open_api_link).pack(pady=5)
-        tk.Button(frame, text="Save API Key", command=self.save_config).pack(pady=5)
+        link_label = tk.Label(frame, text="Get your API key here", fg="blue", cursor="hand2")
+        link_label.pack(pady=5)
+        link_label.bind("<Button-1>", lambda e: self.open_api_link())
 
-        tk.Label(frame, text="Hotkey:\nAlt+Q: Correct selected text\nTo revert changes, use Ctrl+Z").pack(pady=10)
-        tk.Label(frame, text="© Gleb Bochkarov").pack(side=tk.BOTTOM, pady=10)
+        tk.Button(frame, text="Manage API Keys", command=self.open_api_key_manager).pack(pady=5)
+        tk.Label(frame, text="Hotkeys:").pack(pady=5)
+        hotkey_frame = tk.Frame(frame)
+        hotkey_frame.pack(pady=5)
+        tk.Label(hotkey_frame, text="Alt+Q:", font=('Arial', 10, 'bold')).grid(row=1, column=0, sticky='w')
+        tk.Label(hotkey_frame, text="Correct selected text", font=('Arial', 10)).grid(row=1, column=1, sticky='w')
+        tk.Label(hotkey_frame, text="Ctrl+Z:", font=('Arial', 10, 'bold')).grid(row=2, column=0, sticky='w')
+        tk.Label(hotkey_frame, text="Revert changes", font=('Arial', 10)).grid(row=2, column=1, sticky='w')
 
     def create_tray_icon(self):
         # Create simple tray icon
@@ -171,8 +176,19 @@ class AppUI(tk.Tk):
         self.attributes('-topmost', 0)
 
     def show_about(self):
-        notify("Text Corrector",
-               "Version 1.0\nPress Alt+Q to correct text\nCtrl+Z to revert")
+        about_window = tk.Toplevel(self)
+        about_window.iconbitmap('icon.ico')
+        about_window.title("About Text Corrector")
+        about_window.geometry("300x150")
+        about_window.resizable(False, False)
+
+        tk.Label(about_window, text="Text Corrector v1.0.0", font=('Arial', 12, 'bold')).pack(pady=5)
+        tk.Label(about_window, text="AI Model: gpt-3.5-turbo").pack(pady=5)
+        tk.Label(about_window, text="Author: Gleb Bochkarov").pack(pady=5)
+
+        close_btn = tk.Button(about_window, text="Close", command=about_window.destroy)
+        close_btn.pack(pady=5)
+        about_window.grab_set()
 
     def quit_app(self):
         self.tray_icon.stop()
@@ -183,39 +199,75 @@ class AppUI(tk.Tk):
     def open_api_link(self):
         webbrowser.open("https://platform.openai.com/api-keys")
 
+    def mask_api_key(self, key):
+        if not key:
+            return "None"
+        if len(key) <= 6:
+            return "***"  # Handle very short keys
+        return f"{key[:2]}...{key[-4:]}" if len(key) > 6 else key
+
+    def open_api_key_manager(self):
+        manager = tk.Toplevel(self)
+        manager.iconbitmap('icon.ico')
+        manager.title("API Key Management")
+        manager.geometry("320x80")
+        manager.resizable(False, False)
+
+        tk.Label(manager, text="API Key:").grid(row=0, column=0, padx=5, pady=5)
+        key_entry = tk.Entry(manager, width=40)
+        key_entry.grid(row=0, column=1, padx=5, pady=5)
+
+        # Buttons
+        btn_frame = tk.Frame(manager)
+        btn_frame.grid(row=1, column=0, columnspan=2, pady=10)
+
+        tk.Button(btn_frame, text="Save", command=lambda: self.save_api_key(
+            key_entry.get().strip(),
+            manager
+        )).pack(side=tk.LEFT, padx=5)
+
+        tk.Button(btn_frame, text="Cancel", command=manager.destroy).pack(side=tk.LEFT, padx=5)
+
+    def save_api_key(self, key, window):
+        if not key:
+            notify("Error", "API key cannot be empty")
+            return
+
+        self.api_key = key
+        masked = self.mask_api_key(key)
+        self.api_status_label.config(text=f"API Key: {masked}")
+        self.save_config()
+        window.destroy()
+        notify("Success", "API key saved successfully")
+
     def get_api_key(self):
-        return self.api_key.get().strip()
+        return self.api_key
 
     def load_config(self):
         if CONFIG_FILE.exists():
             try:
-                # Read encrypted format
                 with open(CONFIG_FILE, 'rb') as f:
-                    encrypted_api_key = f.read()
+                    encrypted_data = f.read()
 
-                # Direct decryption attempt
-                decrypted_api_key = self.cipher.decrypt(encrypted_api_key).decode()
-                self.api_key.set(decrypted_api_key)
+                decrypted_data = self.cipher.decrypt(encrypted_data).decode()
+                self.api_key = decrypted_data
+                masked = self.mask_api_key(decrypted_data)
+                self.api_status_label.config(text=f"API Key: {masked}")
 
             except Exception as e:
-                notify("Config Error", "Failed to read encrypted config file")
+                notify("Config Error", "Failed to load configuration")
 
     def save_config(self):
-        api_key = self.api_key.get().strip()
-        if not api_key:
-            notify("Error", "API key cannot be empty")
-            return
         try:
-            encrypted_api_key = self.cipher.encrypt(api_key.encode())
+            encrypted_data = self.cipher.encrypt(self.api_key.encode())
             with open(CONFIG_FILE, 'wb') as f:
-                f.write(encrypted_api_key)
-            notify("Settings Saved", "API key stored successfully")
+                f.write(encrypted_data)
+
         except Exception as e:
-            notify("Save Error", f"Failed to save API key: {str(e)}")
+            notify("Save Error", f"Failed to save configuration: {str(e)}")
 
     def destroy(self):
         self.withdraw()
-
 
 def handle_key_event(event):
     global alt_pressed, q_pressed, hotkey_active
@@ -246,7 +298,6 @@ def handle_key_event(event):
         hotkey_active = False
 
     return False if suppress or hotkey_active else None
-
 
 if __name__ == "__main__":
     app = AppUI()
