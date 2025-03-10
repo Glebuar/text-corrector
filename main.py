@@ -137,6 +137,10 @@ class AppUI(tk.Tk):
         self.resizable(False, False)
         self.minsize(250, 210)
         self.maxsize(250, 210)
+        
+        # Set window to minimize to tray on close
+        self.protocol('WM_DELETE_WINDOW', self.withdraw)
+        
         self.withdraw()
         self.create_tray_icon()
         self.setup_ui()
