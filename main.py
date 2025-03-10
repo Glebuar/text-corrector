@@ -199,11 +199,23 @@ class AppUI(tk.Tk):
         close_btn.pack(pady=5)
         about_window.grab_set()
 
+    def destroy(self):
+        super().destroy()
+
     def quit_app(self):
-        self.tray_icon.stop()
-        self.destroy()
+        # Stop the tray icon first
+        if self.tray_icon:
+            self.tray_icon.stop()
+        
+        # Unhook keyboard listeners
         keyboard.unhook_all()
-        self.quit()
+        
+        # Destroy the window
+        self.destroy()
+        
+        # Force exit the application
+        import os
+        os._exit(0)  # Force exit to terminate all threads
 
     def open_api_link(self):
         webbrowser.open("https://platform.openai.com/api-keys")
@@ -274,9 +286,6 @@ class AppUI(tk.Tk):
 
         except Exception as e:
             notify("Save Error", f"Failed to save configuration: {str(e)}")
-
-    def destroy(self):
-        self.withdraw()
 
 def handle_key_event(event):
     global alt_pressed, q_pressed, hotkey_active
