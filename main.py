@@ -59,7 +59,7 @@ def is_connected():
 
 def correct_text_with_openai(input_text: str, api_key: str) -> str:
     prompt = ChatPromptTemplate.from_template(
-        "Correct grammar, spelling, punctuation, and style errors. Ensure each corrected sentence closely matches the original length. Do not comment or provide explanations about corrections. If the text includes nonsensical content, such as code snippets, repeating symbols, quotes, or variable names, leave those parts exactly as-is without modification. Provide only the corrected text:\n{input_text}"
+        "Correct grammar, spelling, punctuation, and style errors; ensure each corrected sentence closely matches the original length; if the text contains nonsensical or repetitive content (e.g., random characters, code snippets, variable names, symbols, quotes) or has no errors, return the original text exactly as provided; do not comment or provide explanations about corrections; provide only the corrected text:\n{input_text}"
     )
     llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0, api_key=api_key)
     chain = prompt | llm
@@ -280,38 +280,32 @@ class AppUI(tk.Tk):
 
 def handle_key_event(event):
     global alt_pressed, q_pressed, hotkey_active
-    suppress = False
-
+    
     if event.event_type == keyboard.KEY_DOWN:
-        if event.name == 'alt' and not alt_pressed:
+        if event.name == 'alt':
             alt_pressed = True
-            if q_pressed:
-                hotkey_active = True
-                suppress = True
-        elif event.name == 'q' and not q_pressed:
+        elif event.name == 'q':
             q_pressed = True
-            if alt_pressed:
-                hotkey_active = True
-                suppress = True
-
+            
+        if alt_pressed and q_pressed and not hotkey_active:
+            hotkey_active = True
+            keyboard.call_later(replace_selected_text, delay=0.1)
+            return True
+            
     elif event.event_type == keyboard.KEY_UP:
         if event.name == 'alt':
             alt_pressed = False
-            suppress = hotkey_active
+            hotkey_active = False
         elif event.name == 'q':
             q_pressed = False
-            suppress = hotkey_active
-
-    if hotkey_active and not alt_pressed and not q_pressed:
-        keyboard.call_later(replace_selected_text, delay=0.1)
-        hotkey_active = False
-
-    return False if suppress or hotkey_active else None
+            hotkey_active = False
+            
+    # Only suppress when hotkey is active
+    return True if hotkey_active else False
 
 if __name__ == "__main__":
     app = AppUI()
-    keyboard.hook_key('alt', handle_key_event, suppress=True)
-    keyboard.hook_key('q', handle_key_event, suppress=True)
+    keyboard.hook(handle_key_event)  # Use a single hook for all keys
     notify("AI Text Correction Tool",
            "Running in system tray\nPress Alt+Q to correct text\nUse Ctrl+Z to revert")
     app.mainloop()
