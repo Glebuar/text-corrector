@@ -22,6 +22,7 @@ pip install -r requirements.txt
 ### 4 Building the Executable
 
 ```sh
+pip install cx_Freeze
 python setup.py build
 ```
 
